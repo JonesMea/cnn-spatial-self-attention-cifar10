@@ -20,23 +20,23 @@ CIFAR10_STD = (0.2470, 0.2435, 0.2616)
 class VGGBlock(nn.Module):
     """Conv 3x3 -> ReLU -> Conv 3x3 -> ReLU -> optional MaxPool."""
 
-    def __init__(self, in_channels, out_channels, use_pool=True, dropout=0.2):
+    def __init__(self, in_channels, out_channels, use_pool=True, conv_dropout=0.2):
         super().__init__()
 
         layers = [
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
-            nn.Dropout(dropout),
+            nn.Dropout2d(conv_dropout),
 
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, stride=2),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, stride=1),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
-            nn.Dropout(dropout)
+            nn.Dropout2d(conv_dropout)
         ]
 
-        """ if use_pool:
-            layers.append(nn.MaxPool2d(kernel_size=2, stride=2)) """
+        if use_pool:
+            layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
 
         self.block = nn.Sequential(*layers)
  
@@ -55,7 +55,7 @@ class ConvNet(nn.Module):
         image -> patchify conv -> 3 VGG blocks -> flatten -> FC -> logits
     """
 
-    def __init__(self, f=2, patch_filters=64, channels=None, hidden_dim=128, num_classes=10, dropout=0.2):
+    def __init__(self, f=2, patch_filters=64, channels=None, hidden_dim=128, num_classes=10, conv_dropout=0.2, dropout=0.2):
         super().__init__()
 
         if channels is None:
@@ -70,7 +70,7 @@ class ConvNet(nn.Module):
             ),
             nn.BatchNorm2d(patch_filters),
             nn.ReLU(),
-            nn.Dropout(dropout)
+            nn.Dropout2d(conv_dropout)
         )
 
         blocks = []
@@ -80,7 +80,7 @@ class ConvNet(nn.Module):
             # For three blocks, the last block usually skips max-pooling.
             use_pool = i != len(channels) - 1 or len(channels) == 1
 
-            blocks.append(VGGBlock(in_channels, out_channels, use_pool=use_pool, dropout=dropout))
+            blocks.append(VGGBlock(in_channels, out_channels, use_pool=use_pool, conv_dropout=conv_dropout))
             in_channels = out_channels
 
         self.features = nn.Sequential(
@@ -94,12 +94,9 @@ class ConvNet(nn.Module):
             flat_dim = self.features(dummy).view(1, -1).shape[1]
 
         self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
-            nn.Linear(flat_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, num_classes)
+            nn.Linear(channels[-1], num_classes)
         )
 
         self.reset_parameters()
@@ -370,9 +367,9 @@ def main():
     seed = 26
 
     # Data settings
-    batch_size = 512
+    batch_size = 1024
     val_size = 1000
-    num_workers = 6
+    num_workers = 8
     augment = True
 
     # Model settings
@@ -383,7 +380,8 @@ def main():
     channels = [64, 128, 256]
 
     hidden_dim = 128
-    dropout = 0.2
+    conv_dropout = 0.0
+    dropout = 0
 
     # Training settings
     epochs = 100
@@ -408,7 +406,8 @@ def main():
         patch_filters=patch_filters,
         channels=channels,
         hidden_dim=hidden_dim,
-        dropout=dropout
+        dropout=dropout,
+        conv_dropout=conv_dropout
     )
 
     history = fit(
