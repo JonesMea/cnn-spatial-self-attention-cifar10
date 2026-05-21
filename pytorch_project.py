@@ -29,14 +29,14 @@ class VGGBlock(nn.Module):
             nn.ReLU(),
             nn.Dropout(dropout),
 
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, stride=2),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
             nn.Dropout(dropout)
         ]
 
-        if use_pool:
-            layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
+        """ if use_pool:
+            layers.append(nn.MaxPool2d(kernel_size=2, stride=2)) """
 
         self.block = nn.Sequential(*layers)
  
