@@ -1,3 +1,5 @@
+from statistics import mean, variance
+
 import torch
 import torch.nn as nn
 
@@ -43,44 +45,42 @@ def run_attention_grid_search(
     seed
 ):
     baseline_result = {
-        "val_loss": 0.3839,
-        "val_acc": 0.9040,
-        "test_loss": 0.4334,
-        "test_acc": 0.8989
+        "val_loss": 0.4062,
+        "val_acc": 0.9016,
+        "test_loss": 0.4628,
+        "test_acc": 0.8933
     }
 
-    attention_configs = [
-        {
-            "name": "attention_last_block",
-            "use_attention": True,
-            "attention_layers": [2],
-            "attention_heads": 4,
-            "attention_dropout": 0.0
-        },
-        {
-            "name": "attention_all_blocks",
-            "use_attention": True,
-            "attention_layers": [1, 2],
-            "attention_heads": 4,
-            "attention_dropout": 0.0
-        },
-                {
-            "name": "attention_all_blocks",
-            "use_attention": True,
-            "attention_layers": [0, 1, 2],
-            "attention_heads": 4,
-            "attention_dropout": 0.0
-        },
-        {
-            "name": "attention_all_blocks_dropout",
-            "use_attention": True,
-            "attention_layers": [0, 1, 2],
-            "attention_heads": 4,
-            "attention_dropout": 0.1
-        },
+    attention_layer_options = [
+        [0],
+        [1],
+        [2],
+        [0, 1],
+        [0, 2],
+        [1, 2],
+        [0, 1, 2],
     ]
+    attention_head_options = [2, 4, 8]
+    attention_dropout_options = [0.0, 0.05, 0.1]
+
+    attention_configs = []
+
+    for attention_layers in attention_layer_options:
+        layer_name = "".join(str(layer) for layer in attention_layers)
+
+        for attention_heads in attention_head_options:
+            for attention_dropout in attention_dropout_options:
+                attention_configs.append({
+                    "name": f"layers_{layer_name}_heads_{attention_heads}_dropout_{attention_dropout}",
+                    "use_attention": True,
+                    "attention_layers": attention_layers,
+                    "attention_heads": attention_heads,
+                    "attention_dropout": attention_dropout
+                })
 
     results = []
+
+    print("Attention grid search runs:", len(attention_configs))
 
     for attention_config in attention_configs:
         print("\nGrid search run:", attention_config["name"])
@@ -137,6 +137,127 @@ def run_attention_grid_search(
     return results
 
 
+def run_repeated_validation_comparison(
+    train_loader,
+    train_eval_loader,
+    val_loader,
+    test_loader,
+    model_settings,
+    training_settings,
+    device,
+    seed,
+    runs=5
+):
+    configs = [
+        {
+            "name": "baseline_no_attention",
+            "use_attention": False,
+            "attention_layers": [],
+            "attention_heads": 4,
+            "attention_dropout": 0.0
+        },
+        {
+            "name": "layers_12_heads_4_dropout_0.1",
+            "use_attention": True,
+            "attention_layers": [1, 2],
+            "attention_heads": 4,
+            "attention_dropout": 0.1
+        },
+        {
+            "name": "layers_02_heads_2_dropout_0.0",
+            "use_attention": True,
+            "attention_layers": [0, 2],
+            "attention_heads": 2,
+            "attention_dropout": 0.0
+        },
+        {
+            "name": "layers_1_heads_2_dropout_0.0",
+            "use_attention": True,
+            "attention_layers": [1],
+            "attention_heads": 2,
+            "attention_dropout": 0.0
+        },
+        {
+            "name": "layers_012_heads_4_dropout_0.0",
+            "use_attention": True,
+            "attention_layers": [0, 1, 2],
+            "attention_heads": 4,
+            "attention_dropout": 0.0
+        },
+    ]
+
+    results = []
+
+    for config in configs:
+        best_val_accs = []
+        final_val_accs = []
+        test_accs = []
+
+        print("\nRepeated validation config:", config["name"])
+        print("---------------------------")
+
+        for run in range(runs):
+            run_seed = seed + run
+            print(f"\nRun {run + 1}/{runs} | seed {run_seed}")
+
+            set_seed(run_seed)
+
+            model = make_model(
+                **model_settings,
+                use_attention=config["use_attention"],
+                attention_layers=config["attention_layers"],
+                attention_heads=config["attention_heads"],
+                attention_dropout=config["attention_dropout"]
+            )
+
+            history = fit(
+                model=model,
+                train_loader=train_loader,
+                train_eval_loader=train_eval_loader,
+                val_loader=val_loader,
+                device=device,
+                **training_settings
+            )
+
+            criterion = nn.CrossEntropyLoss(label_smoothing=training_settings["label_smoothing"])
+            test_loss, test_acc = evaluate(model, test_loader, criterion, device)
+
+            best_val_accs.append(max(history["val_acc"]))
+            final_val_accs.append(history["val_acc"][-1])
+            test_accs.append(test_acc)
+
+            print(f"Test loss {test_loss:.4f}, acc {test_acc:.4f}")
+
+        result = {
+            **config,
+            "best_val_acc_mean": mean(best_val_accs),
+            "best_val_acc_variance": variance(best_val_accs),
+            "final_val_acc_mean": mean(final_val_accs),
+            "final_val_acc_variance": variance(final_val_accs),
+            "test_acc_mean": mean(test_accs),
+            "test_acc_variance": variance(test_accs),
+        }
+        results.append(result)
+
+    results = sorted(results, key=lambda result: result["final_val_acc_mean"], reverse=True)
+
+    print("\nRepeated validation comparison")
+    print("------------------------------")
+
+    for result in results:
+        print(
+            f"{result['name']:32s} | "
+            f"best val acc mean {result['best_val_acc_mean']:.4f}, "
+            f"var {result['best_val_acc_variance']:.8f} | "
+            f"final val acc mean {result['final_val_acc_mean']:.4f}, "
+            f"var {result['final_val_acc_variance']:.8f} | "
+            f"test acc mean {result['test_acc_mean']:.4f}, "
+            f"var {result['test_acc_variance']:.8f}"
+        )
+
+    return results
+
+
 def main():
     # General settings
     data_dir = "../Datasets"
@@ -144,10 +265,11 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     seed = 26
     run_grid_search = False
+    run_repeated_validation = False
 
     # Data settings
     batch_size = 256
-    val_size = 5000
+    val_size = 1000
     num_workers = 8
     augment = True
 
@@ -161,7 +283,7 @@ def main():
     hidden_dim = 128
     conv_dropout = 0.0
     dropout = 0
-    use_attention = False
+    use_attention = True
     attention_layers = [0, 1, 2]  # 0-based
     attention_heads = 4
     attention_dropout = 0.0
@@ -171,7 +293,9 @@ def main():
     lr = 2e-3
     weight_decay = 1e-3
     label_smoothing = 0.0
-    grid_search_epochs = 20
+    grid_search_epochs = 60
+    repeated_validation_epochs = 100
+    repeated_validation_runs = 5
 
     set_seed(seed)
 
@@ -200,6 +324,25 @@ def main():
         "weight_decay": weight_decay,
         "label_smoothing": label_smoothing,
     }
+
+    if run_repeated_validation:
+        repeated_training_settings = {
+            **training_settings,
+            "epochs": repeated_validation_epochs,
+        }
+
+        run_repeated_validation_comparison(
+            train_loader=train_loader,
+            train_eval_loader=train_eval_loader,
+            val_loader=val_loader,
+            test_loader=test_loader,
+            model_settings=model_settings,
+            training_settings=repeated_training_settings,
+            device=device,
+            seed=seed,
+            runs=repeated_validation_runs
+        )
+        return
 
     if run_grid_search:
         grid_training_settings = {
