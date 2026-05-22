@@ -44,6 +44,37 @@ class VGGBlock(nn.Module):
         return self.block(x)
 
 
+class SpatialSelfAttention(nn.Module):
+    """Multi-head self-attention over spatial positions in a CNN feature map."""
+
+    def __init__(self, channels, num_heads=4, dropout=0.0):
+        super().__init__()
+
+        if channels % num_heads != 0:
+            raise ValueError("channels must be divisible by num_heads for MultiheadAttention.")
+
+        self.norm = nn.LayerNorm(channels)
+        self.attention = nn.MultiheadAttention(
+            embed_dim=channels,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
+
+    def forward(self, x):
+        batch_size, channels, height, width = x.shape
+
+        # Treat every spatial position as one token with C features.
+        tokens = x.flatten(2).transpose(1, 2)  # (B, H*W, C)
+
+        # Pre-norm transformer-style residual attention.
+        norm_tokens = self.norm(tokens)
+        attention_tokens, _ = self.attention(norm_tokens, norm_tokens, norm_tokens, need_weights=False)
+        tokens = tokens + attention_tokens
+
+        return tokens.transpose(1, 2).reshape(batch_size, channels, height, width)
+
+
 class ConvNet(nn.Module):
     """
     Patchify ConvNet upgraded with VGG-style blocks.
@@ -55,11 +86,31 @@ class ConvNet(nn.Module):
         image -> patchify conv -> 3 VGG blocks -> flatten -> FC -> logits
     """
 
-    def __init__(self, f=2, patch_filters=64, channels=None, hidden_dim=128, num_classes=10, conv_dropout=0.2, dropout=0.2):
+    def __init__(
+        self,
+        f=2,
+        patch_filters=64,
+        channels=None,
+        hidden_dim=128,
+        num_classes=10,
+        conv_dropout=0.2,
+        dropout=0.2,
+        use_attention=False,
+        attention_layers=None,
+        attention_heads=4,
+        attention_dropout=0.0
+    ):
         super().__init__()
 
         if channels is None:
             channels = [64]
+
+        if attention_layers is None:
+            attention_layers = [len(channels) - 1] if use_attention else []
+        elif not use_attention:
+            attention_layers = []
+
+        attention_layers = set(attention_layers)
 
         self.patchify = nn.Sequential(
             nn.Conv2d(
@@ -81,17 +132,16 @@ class ConvNet(nn.Module):
             use_pool = i != len(channels) - 1 or len(channels) == 1
 
             blocks.append(VGGBlock(in_channels, out_channels, use_pool=use_pool, conv_dropout=conv_dropout))
+
+            if i in attention_layers:
+                blocks.append(SpatialSelfAttention(out_channels, num_heads=attention_heads, dropout=attention_dropout))
+
             in_channels = out_channels
 
         self.features = nn.Sequential(
             self.patchify,
             *blocks
         )
-
-        # Automatically infer flatten size to avoid manual shape calculations.
-        with torch.no_grad():
-            dummy = torch.zeros(1, 3, 32, 32)
-            flat_dim = self.features(dummy).view(1, -1).shape[1]
 
         self.classifier = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, 1)),
@@ -367,7 +417,7 @@ def main():
     seed = 26
 
     # Data settings
-    batch_size = 1024
+    batch_size = 256
     val_size = 1000
     num_workers = 8
     augment = True
@@ -382,10 +432,14 @@ def main():
     hidden_dim = 128
     conv_dropout = 0.0
     dropout = 0
+    use_attention = False
+    attention_layers = [0, 1, 2]  # 0-based
+    attention_heads = 4
+    attention_dropout = 0.0
 
     # Training settings
     epochs = 100
-    lr = 2e-3 # = 0.001
+    lr = 1e-3 
     weight_decay = 1e-3
     label_smoothing = 0.0
 
@@ -407,7 +461,11 @@ def main():
         channels=channels,
         hidden_dim=hidden_dim,
         dropout=dropout,
-        conv_dropout=conv_dropout
+        conv_dropout=conv_dropout,
+        use_attention=use_attention,
+        attention_layers=attention_layers,
+        attention_heads=attention_heads,
+        attention_dropout=attention_dropout
     )
 
     history = fit(
