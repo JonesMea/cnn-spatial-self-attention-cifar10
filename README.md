@@ -72,3 +72,26 @@ attention_heads = 4
 ```
 
 Each selected attention layer is inserted after the corresponding VGG block.
+
+## Attention Grid Search
+
+`main.py` includes a minimal attention grid search for quick comparison runs. Enable it with:
+
+```python
+run_grid_search = True
+```
+
+The grid search uses `grid_search_epochs` and compares:
+
+- attention after the last VGG block
+- attention after all VGG blocks
+- attention after all VGG blocks with attention dropout
+
+The no-attention baseline is not rerun. The script prints the known baseline result for reference:
+
+```text
+val loss 0.3839, val acc 0.9040
+test loss 0.4334, test acc 0.8989
+```
+
+The final test set is not used during the grid search; attention runs are ranked by validation accuracy.
