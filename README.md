@@ -34,5 +34,6 @@ The improvement from attention was positive but modest. The results suggest that
 ├── main.py                  # Experiment settings and entry point
 ├── plots_basic/             # Baseline model learning curves
 ├── plots_attention/         # Attention-model learning curves
+├── report/                  # Compiled LaTeX project report
 └── README.md
 ```
