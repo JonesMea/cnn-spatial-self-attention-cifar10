@@ -14,11 +14,12 @@ The best attention model used attention after all three VGG blocks with four hea
 
 ## Main results
 
-| Model                 | Setting                   | Test accuracy |
-| No-attention baseline | 5-seed mean, 45k/5k split | 89.26%        |
-| Best attention model  | 5-seed mean, 45k/5k split | 89.65%        |
-| No-attention baseline | Final 49k/1k single run   | 89.74%        |
-| Best attention model  | Final 49k/1k single run   | 90.02%        |
+| Model | Setting | Test accuracy |
+|---|---|---:|
+| No-attention baseline | 5-seed mean, 45k/5k split | 89.26% |
+| Best attention model | 5-seed mean, 45k/5k split | 89.65% |
+| No-attention baseline | Final 49k/1k single run | 89.74% |
+| Best attention model | Final 49k/1k single run | 90.02% |
 
 The improvement from attention was positive but modest. The results suggest that spatial self-attention can provide a small generalization benefit on top of a strong convolutional feature extractor, but the effect depends on the attention configuration.
 
