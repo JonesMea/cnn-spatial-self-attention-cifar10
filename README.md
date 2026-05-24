@@ -1,74 +1,37 @@
-# DD2424 Project
+# Spatial Multi-Head Self-Attention in VGG-Style ConvNets for CIFAR-10
 
-This project trains a CNN for CIFAR-10 classification using PyTorch. The model is a patchify-style convolutional network with VGG-like blocks and optional spatial self-attention layers.
+This repository contains the code and report for a DD2424 Deep Learning project on CIFAR-10 image classification. The project builds a strong VGG-style convolutional baseline and then investigates whether spatial multi-head self-attention modules improve generalization.
 
-## Files
+## Project summary
 
-- `main.py` contains the experiment configuration and training entry point.
-- `models.py` contains `VGGBlock`, `SpatialSelfAttention`, and `ConvNet`.
-- `data.py` builds the CIFAR-10 train, validation, train-evaluation, and test loaders.
-- `train.py` contains the training loop, evaluation loop, optimizer, scheduler, and history tracking.
-- `utils.py` contains seeding, metric helpers, parameter counting, and plotting.
-- `cnn_attention_cifar10.py` is a compatibility wrapper that runs `main.py`.
+The main research question is:
 
-## Requirements
+> Does adding spatial multi-head self-attention to a strong VGG-style ConvNet improve CIFAR-10 generalization?
 
-Install the required Python packages:
+The final baseline is a VGG-style ConvNet trained from scratch using data augmentation, AdamW weight decay, warmup followed by cosine learning-rate decay, and global average pooling. The extension adds spatial self-attention modules after selected VGG blocks and evaluates different attention placements, head counts, and attention dropout values.
 
-```powershell
-pip install torch torchvision matplotlib
-```
+The best attention model used attention after all three VGG blocks with four heads and no attention dropout.
 
-If you use CUDA, install the PyTorch build that matches your CUDA version from the official PyTorch instructions.
+## Main results
 
-## Data
+| Model                 | Setting                   | Test accuracy |
+| No-attention baseline | 5-seed mean, 45k/5k split | 89.26%        |
+| Best attention model  | 5-seed mean, 45k/5k split | 89.65%        |
+| No-attention baseline | Final 49k/1k single run   | 89.74%        |
+| Best attention model  | Final 49k/1k single run   | 90.02%        |
 
-By default, the script expects CIFAR-10 to already exist under:
+The improvement from attention was positive but modest. The results suggest that spatial self-attention can provide a small generalization benefit on top of a strong convolutional feature extractor, but the effect depends on the attention configuration.
+
+## Repository structure
 
 ```text
-../Datasets
+.
+├── data.py                  # CIFAR-10 loading, augmentation, and stratified splits
+├── models.py                # VGG-style ConvNet and spatial self-attention module
+├── train.py                 # Training loop, evaluation, optimizer, scheduler
+├── utils.py                 # Seeding, parameter counting, plotting utilities
+├── main.py                  # Experiment settings and entry point
+├── plots_basic/             # Baseline model learning curves
+├── plots_attention/         # Attention-model learning curves
+└── README.md
 ```
-
-This is controlled in `main.py`:
-
-```python
-data_dir = "../Datasets"
-download = False
-```
-
-Set `download = True` if you want torchvision to download CIFAR-10 automatically.
-
-## Running
-
-Run the main experiment with:
-
-```powershell
-python .\main.py
-```
-
-The original filename still works too:
-
-```powershell
-python .\cnn_attention_cifar10.py
-```
-
-The script prints training and validation metrics every epoch, evaluates on the test set at the end, and plots loss and accuracy curves.
-
-## Configuration
-
-Most settings are near the top of `main()` in `main.py`, including:
-
-- data settings: `batch_size`, `val_size`, `num_workers`, `augment`
-- model settings: `f`, `patch_filters`, `channels`, `conv_dropout`, `dropout`
-- attention settings: `use_attention`, `attention_layers`, `attention_heads`, `attention_dropout`
-- training settings: `epochs`, `lr`, `weight_decay`, `label_smoothing`
-
-To enable attention, set:
-
-```python
-use_attention = True
-attention_layers = [0, 1, 2]
-attention_heads = 4
-```
-
-Each selected attention layer is inserted after the corresponding VGG block.
